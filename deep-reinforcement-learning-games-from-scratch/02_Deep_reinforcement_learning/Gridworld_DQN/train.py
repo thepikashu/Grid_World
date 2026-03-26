@@ -3,6 +3,8 @@ import numpy as np
 import time
 import sys
 import os
+import math  # ADDITION: for exponential epsilon decay
+import csv   # ADDITION: for training logger
 
 sys.path.append( # add parent directory to the python path so you can import from sub directories
     os.path.dirname( # get the name of the parent directory
@@ -23,6 +25,11 @@ BATCH_SIZE = 8
 GAMMA = 0.99
 TAU = 0.005
 LR = 1e-3
+# CHANGE: epsilon parameters for decay schedule
+EPSILON_START = 1.0
+EPSILON_MIN   = 0.05
+EPSILON_DECAY = 400   # controls how fast epsilon drops
+steps_done    = 0
 
 num_episodes = 80
 rewards = [0]
@@ -70,7 +77,10 @@ def optimize_model():
 
   # Compute next state values for non-final states
   with torch.no_grad():
-    next_state_values[non_final_mask] = target_net(non_final_next_states).max(1)[0]
+    # CHANGE: DDQN fix — use policy_net to SELECT action, target_net to EVALUATE it
+    # This reduces overestimation bias present in vanilla DQN
+    best_actions = policy_net(non_final_next_states).argmax(1, keepdim=True)
+    next_state_values[non_final_mask] = target_net(non_final_next_states).gather(1, best_actions).squeeze(1)
 
   # Compute the expected state-action values
   expected_state_action_values = ((next_state_values * GAMMA) + reward_batch).unsqueeze(1)
@@ -91,7 +101,10 @@ for i_episode in range(num_episodes):
   state = torch.tensor(state, dtype=torch.float32).unsqueeze(0)
   while True:
     env.render()  # Render the environment
-    action = action_selector.select(state)  # Select an action
+    # CHANGE: compute decayed epsilon and pass to selector
+    epsilon = EPSILON_MIN + (EPSILON_START - EPSILON_MIN) * math.exp(-1. * steps_done / EPSILON_DECAY)
+    steps_done += 1
+    action = action_selector.select(state, epsilon=epsilon)  # Select an action
     observation, reward, done, _ = env.step(action.item())  # Perform the action
     episode_reward += reward
 
@@ -125,6 +138,9 @@ for i_episode in range(num_episodes):
         plot(rewards)  # Plot the rewards
         print("DONE!")
         torch.save(policy_net, "results/DQN.model")  # Save the trained model
+        # CHANGE: log episode stats to CSV for plotting later
+        with open("results/training_log.csv", "a", newline="") as f:
+            csv.writer(f).writerow([i_episode, episode_reward, round(epsilon, 4)])
         env.render()  # Render the final state of the environment
         break
 
