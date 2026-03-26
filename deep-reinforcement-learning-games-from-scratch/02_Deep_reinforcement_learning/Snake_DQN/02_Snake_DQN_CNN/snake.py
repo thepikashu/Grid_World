@@ -3,9 +3,10 @@ from env import Vertex, Direction
 from typing import List, Tuple
 
 # Define reward constants
-REWARD_FOOD = 10000
-REWARD_DIE = -1000
-REWARD_MOVE = -1
+# CHNAGE: rescaled rewards for stable CNN gradient updates
+REWARD_FOOD = 500     # reduced from 10000 — large values cause gradient explosion
+REWARD_DIE = -100     # reduced proportionally
+REWARD_MOVE = -0.5    # lighter step penalty for CNN version
 
 class Snake:
     """
@@ -114,13 +115,12 @@ class Snake:
         return self.dir
 
     def step(self, action):
-        """
-        Perform one step in the game. Move the snake according to the action, update the grid, and return the new state and reward.
-        """
         self.reward = REWARD_MOVE
         dir = self._dir_calculator(action)
         done = self.move(dir)
         self.grid.update(self)
+        # CHANGE: track steps per episode to monitor agent efficiency
+        self.steps += 1
         return self.game_state(), self.reward, done, None
 
     def game_state(self):
@@ -134,6 +134,7 @@ class Snake:
         Reset the snake to its initial state.
         """
         self.dir_idx, self.dir = (0, self.direction.RIGHT)
+        self.steps = 0   # ADDED: reset step counter each episode
         self.head =  Vertex(self.w//2, self.h//2)
         self.snake = [self.head, self.head - Vertex(1, 0) , self.head - Vertex(2, 0)]
         self.score = 0 
