@@ -3,6 +3,7 @@ import numpy as np
 import time
 import sys
 import os
+import math  # ADDITION: needed for exponential epsilon decay
 
 # Add parent directory to the Python path to enable importing from subdirectories
 sys.path.append(
@@ -16,17 +17,25 @@ from Games.gridWorld import GridWorld  # Import GridWorld environment
 
 # Define QLearning class
 class QLearning():
-    def __init__(self, env, episodes=10000, epsilon=.2, alpha=.1, gamma=.99):
-        # Initialize action values, episodes, learning rate, discount factor, and exploration rate
+    def __init__(self, env, episodes=10000, epsilon=1.0, epsilon_min=0.05, alpha=.1, gamma=.99):
         self.action_values = np.zeros((env.rows, env.cols, env.action.action_n))
-        self.episodes =  episodes
+        self.episodes = episodes
         self.alpha = alpha
         self.gamma = gamma
         self.epsilon = epsilon
+        self.epsilon_min = epsilon_min      # CHANGE: min exploration floor
+        self.epsilon_start = epsilon        # CHANGE: track starting value
+        self.steps_done = 0                 # CHANGE: global step counter
 
     # Define exploratory policy for taking random actions
     def exploratory_policy(self, state):
-        return np.random.choice(env.action.action_idxs) 
+    # CHANGE: exponential decay — explores fast early, slows down later
+        self.epsilon = self.epsilon_min + (self.epsilon_start - self.epsilon_min) * \
+                       math.exp(-1. * self.steps_done / 300)
+        self.steps_done += 1
+        if np.random.rand() < self.epsilon:
+            return np.random.choice(env.action.action_idxs)   # explore
+        return self.target_policy(state)                       # exploit
         
     # Define target policy for taking the action with maximum expected future reward
     def target_policy(self, state):
