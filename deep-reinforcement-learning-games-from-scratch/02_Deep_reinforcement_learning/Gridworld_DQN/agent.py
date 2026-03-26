@@ -33,28 +33,25 @@ class Memory(object):
     return len(self.memory)
 
 class Action(): 
-    def __init__(self, action_space_len, nn, \
-                 eps_start = 0.9, eps_end = 0.05, eps_decay=5000):
+    def __init__(self, action_space_len, nn):
         self.n = action_space_len
-        self.steps_done = 0
         self.nn = nn
-        self.eps_start = eps_start
-        self.eps_end = eps_end
-        self.eps_decay = eps_decay
     
-    def select(self, state):
+    # Updated to accept 'epsilon' as a keyword argument from train.py
+    def select(self, state, epsilon=0):
         sample = random.random()
-        eps_threshold = self.eps_end + (self.eps_start - self.eps_end) * \
-          math.exp(-1. * self.steps_done / self.eps_decay)
-        self.steps_done += 1
-        if sample > eps_threshold:
+        
+        # If random sample is higher than epsilon, use the Neural Network (Exploit)
+        if sample > epsilon:
             with torch.no_grad():
+                # self.nn(state) gives Q-values for all actions; .max(1)[1] picks the index of the highest
                 a = self.nn(state).max(1)[1].view(1, 1)
-                print('[NN action]', a )
+                # print('[NN action]', a ) # Optional: uncomment for debugging
                 return a
+        # Otherwise, take a random action (Explore)
         else:
-            a = torch.tensor( [[random.randint(0, self.n-1)]] )
-            print('[Random Action]', a)
+            a = torch.tensor([[random.randint(0, self.n - 1)]])
+            # print('[Random Action]', a) # Optional: uncomment for debugging
             return a
         
     
