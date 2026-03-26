@@ -3,10 +3,10 @@ from enum import Enum
 from env import Vertex, Grid, Direction
 from typing import List, Tuple
 
-REWARD_FOOD = 10
-REWARD_DIE = -10
-REWARD_MOVE = 0
-
+# CHANGE: tuned reward values for faster convergence
+REWARD_FOOD = 15       # stronger positive signal
+REWARD_DIE = -15       # stronger penalty to avoid walls/self
+REWARD_MOVE = -0.01    # small step penalty to discourage wandering
 
 class Snake:
     def __init__(self, grid):
@@ -90,7 +90,7 @@ class Snake:
         return self.dir
 
     def step(self, action):
-        self.reward += REWARD_MOVE
+        self.reward += REWARD_MOVE  # CHANGE: step penalty applied every move
         dir = self._dir_calculator(action)
         done = self.move(dir)
         reward = self.reward
