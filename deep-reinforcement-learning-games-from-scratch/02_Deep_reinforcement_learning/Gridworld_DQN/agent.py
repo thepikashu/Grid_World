@@ -1,57 +1,64 @@
-import random 
-import math
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from collections import deque, namedtuple
+import random
+from collections import namedtuple, deque
 
+# Structure for memory
 Transition = namedtuple('Transition', ('state', 'action', 'next_state', 'reward'))
 
 class DQN(nn.Module):
-  def __init__(self, n_observations, n_actions, hidden_nn_size=128): 
-    super(DQN, self).__init__()
-    self.layer1 = nn.Linear(n_observations, hidden_nn_size)
-    self.layer2 = nn.Linear(hidden_nn_size,hidden_nn_size)
-    self.layer3 = nn.Linear(hidden_nn_size, n_actions)
+    def __init__(self, n_obs, n_actions):
+        super().__init__()
+        self.f1 = nn.Linear(n_obs, 128)
+        self.f2 = nn.Linear(128, 128)
+        self.f3 = nn.Linear(128, n_actions)
 
-  def forward(self, x):
-    x = F.relu(self.layer1(x))
-    x = F.relu(self.layer2(x))
-    return self.layer3(x)
+    def forward(self, x):
+        x = F.relu(self.f1(x))
+        x = F.relu(self.f2(x))
+        return self.f3(x)
 
-class Memory(object):
-  def __init__(self, capacity):
-    self.memory = deque([], maxlen=capacity)
+class Memory:
+    def __init__(self, capacity):
+        self.memory = deque([], maxlen=capacity)
+    def push(self, *args):
+        self.memory.append(Transition(*args))
+    def sample(self, batch_size):
+        return random.sample(self.memory, batch_size)
+    def __len__(self):
+        return len(self.memory)
 
-  def push(self, *args): 
-    self.memory.append(Transition(*args))
-
-  def sample(self, batch_size):
-    return random.sample(self.memory, batch_size)
-
-  def __len__(self):
-    return len(self.memory)
-
-class Action(): 
-    def __init__(self, action_space_len, nn):
-        self.n = action_space_len
-        self.nn = nn
+# This is your DDQN "Sorcery" - Replace your train.py optimize function with this logic
+def optimize_model(policy_net, target_net, memory, optimizer, BATCH_SIZE, GAMMA):
+    if len(memory) < BATCH_SIZE:
+        return
     
-    # Updated to accept 'epsilon' as a keyword argument from train.py
-    def select(self, state, epsilon=0):
-        sample = random.random()
-        
-        # If random sample is higher than epsilon, use the Neural Network (Exploit)
-        if sample > epsilon:
-            with torch.no_grad():
-                # self.nn(state) gives Q-values for all actions; .max(1)[1] picks the index of the highest
-                a = self.nn(state).max(1)[1].view(1, 1)
-                # print('[NN action]', a ) # Optional: uncomment for debugging
-                return a
-        # Otherwise, take a random action (Explore)
-        else:
-            a = torch.tensor([[random.randint(0, self.n - 1)]])
-            # print('[Random Action]', a) # Optional: uncomment for debugging
-            return a
-        
+    transitions = memory.sample(BATCH_SIZE)
+    batch = Transition(*zip(*transitions))
+
+    state_batch = torch.cat(batch.state)
+    action_batch = torch.cat(batch.action)
+    reward_batch = torch.cat(batch.reward)
     
+    # Mask for non-terminal states
+    non_final_mask = torch.tensor(tuple(map(lambda s: s is not None, batch.next_state)), dtype=torch.bool)
+    non_final_next_states = torch.cat([s for s in batch.next_state if s is not None])
+
+    # Current Q-values
+    state_action_values = policy_net(state_batch).gather(1, action_batch)
+
+    # DDQN Logic: Select action with Policy Net, Evaluate with Target Net
+    next_state_values = torch.zeros(BATCH_SIZE)
+    with torch.no_grad():
+        # Step 1: Policy net decides WHICH action is best
+        best_actions = policy_net(non_final_next_states).argmax(1).unsqueeze(1)
+        # Step 2: Target net tells us WHAT that action is worth
+        next_state_values[non_final_mask] = target_net(non_final_next_states).gather(1, best_actions).squeeze(1)
+
+    expected_q = (next_state_values * GAMMA) + reward_batch
+    
+    loss = nn.SmoothL1Loss()(state_action_values, expected_q.unsqueeze(1))
+    optimizer.zero_grad()
+    loss.backward()
+    optimizer.step()
